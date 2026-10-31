@@ -11,8 +11,8 @@
   'use strict';
 
   // ================= IMPOSTAZIONI =================
-  const LIMITE_MINUTI = 20;          // minuti al giorno (le chat non contano)
-  const PAUSA_SECONDI = 10;          // attesa prima di entrare
+  const LIMITE_MINUTI = 0;           // minuti al giorno (le chat non contano); 0 = nessun limite
+  const PAUSA_SECONDI = 10;          // attesa prima di entrare; 0 = nessuna pausa
   const MINUTI_PER_NUOVA_PAUSA = 5;  // se torni dopo 5+ minuti, nuova pausa
   const APRI_MESSAGGI = true;        // all'apertura vai alle chat invece che al feed
 
@@ -228,6 +228,9 @@
     if (nuova === 'pausa') {
       finePausa = Date.now() + PAUSA_SECONDI * 1000;
       const restanti = Math.max(0, LIMITE_MINUTI - Math.floor(leggiSecondi() / 60));
+      const sottotitolo = LIMITE_MINUTI > 0
+        ? `Oggi ti restano ${restanti} minuti di Instagram.`
+        : 'Prenditi un momento prima di entrare.';
       pulsanteEntra = crea('button', '');
       pulsanteEntra.addEventListener('click', () => {
         if (Date.now() < finePausa) return;
@@ -236,7 +239,7 @@
       });
       overlay.append(
         crea('h1', 'Cosa sei venuto a fare?'),
-        crea('p', `Oggi ti restano ${restanti} minuti di Instagram.`),
+        crea('p', sottotitolo),
         pulsanteEntra,
         btnMessaggi
       );
@@ -255,8 +258,8 @@
     if (!overlay.isConnected) document.documentElement.appendChild(overlay);
     const p = location.pathname;
     if (zonaLibera(p)) { if (modalita) nascondi(); return; }
-    if (leggiSecondi() >= LIMITE_MINUTI * 60) { mostra('limite'); return; }
-    if (!pausaFatta) { mostra('pausa'); return; }
+    if (LIMITE_MINUTI > 0 && leggiSecondi() >= LIMITE_MINUTI * 60) { mostra('limite'); return; }
+    if (!pausaFatta && PAUSA_SECONDI > 0) { mostra('pausa'); return; }
     if (modalita) nascondi();
   };
 
