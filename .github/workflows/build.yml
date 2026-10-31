@@ -1,0 +1,44 @@
+name: Compila IPA
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+
+      - name: Installa XcodeGen
+        run: brew install xcodegen
+
+      - name: Genera il progetto Xcode
+        run: xcodegen generate
+
+      - name: Compila l'app (senza firma)
+        run: |
+          xcodebuild \
+            -project Calma.xcodeproj \
+            -scheme Calma \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Crea il file IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Calma.app Payload/
+          zip -qry Calma.ipa Payload
+
+      - name: Carica l'IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Calma-ipa
+          path: Calma.ipa
