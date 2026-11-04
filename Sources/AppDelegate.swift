@@ -7,9 +7,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // Scuotere il telefono apre le impostazioni di Calma, non "Annulla digitazione"
-        application.applicationSupportsShakeToEdit = false
-        return true
+        true
     }
 
     func application(
@@ -32,21 +30,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         options connectionOptions: UIScene.ConnectionOptions
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
-        let controller = WebViewController()
-        let window = CalmaWindow(windowScene: windowScene)
-        window.allaScossa = { [weak controller] in controller?.apriImpostazioni() }
-        window.rootViewController = controller
+        let window = UIWindow(windowScene: windowScene)
+        window.rootViewController = WebViewController()
         window.makeKeyAndVisible()
         self.window = window
-    }
-}
-
-/// Finestra che riconosce quando scuoti il telefono.
-final class CalmaWindow: UIWindow {
-    var allaScossa: (() -> Void)?
-
-    override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
-        if motion == .motionShake { allaScossa?() }
-        super.motionEnded(motion, with: event)
     }
 }

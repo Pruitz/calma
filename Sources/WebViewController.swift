@@ -79,23 +79,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         webView.load(URLRequest(url: homeURL))
     }
 
-    // Così lo scuotimento del telefono arriva anche se non hai toccato nessun campo di testo
-    override var canBecomeFirstResponder: Bool { true }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        becomeFirstResponder()
-    }
-
     // MARK: - Azioni
-
-    /// Apre la schermata Impostazioni dello script (pausa sì/no).
-    func apriImpostazioni() {
-        webView?.evaluateJavaScript(
-            "window.__calmaImpostazioni && window.__calmaImpostazioni()",
-            completionHandler: nil
-        )
-    }
 
     @objc private func ricarica(_ sender: UIRefreshControl) {
         webView.reload()

@@ -11,8 +11,8 @@
   'use strict';
 
   // ================= IMPOSTAZIONI =================
-  const LIMITE_MINUTI = 0;           // minuti al giorno (le chat non contano); 0 = nessun limite
-  const PAUSA_SECONDI = 10;          // attesa prima di entrare; 0 = nessuna pausa
+  const LIMITE_MINUTI = 20;          // minuti al giorno (le chat non contano)
+  const PAUSA_SECONDI = 10;          // attesa prima di entrare
   const MINUTI_PER_NUOVA_PAUSA = 5;  // se torni dopo 5+ minuti, nuova pausa
   const APRI_MESSAGGI = true;        // all'apertura vai alle chat invece che al feed
 
@@ -34,9 +34,11 @@
   // ================= CSS =================
   const style = document.createElement('style');
   style.textContent = `
-    /* Tab Reels e reel nel feed */
+    /* Tab Reels */
     a[href="/reels/"], a[href="/reels"] { display: none !important; }
-    article:has(a[href*="/reel/"]) { display: none !important; }
+
+    /* Post del feed tolti dallo script (reel e sponsorizzati) */
+    [data-no-feed] { display: none !important; }
 
     /* Cerca: niente griglia, hashtag, luoghi, audio */
     html.ig-esplora a[href*="/p/"],
@@ -71,27 +73,109 @@
     }
     #noreels-overlay button.secondario { background: #262626; color: #fff; }
     #noreels-overlay button:disabled { opacity: .35; }
-    #noreels-overlay button.link { background: transparent; color: #fff; opacity: .6; font-weight: 400; padding: 8px; }
-    #noreels-overlay small { opacity: .45; font-size: 13px; line-height: 1.4; }
   `;
   document.documentElement.appendChild(style);
 
-  // Riserva: reel nel feed che non stanno dentro <article>
-  const nascondiReelNelFeed = () => {
-    if (location.pathname !== '/') return;
-    document.querySelectorAll('a[href*="/reel/"]').forEach((a) => {
-      if (a.closest('article') || a.dataset.noReel) return;
-      a.dataset.noReel = '1';
+  // ================= FEED: reel e post sponsorizzati =================
+  // Parole che Instagram usa per le pubblicità (a volte spezzate in più pezzi)
+  const PAROLE_ADV = /^(sponsorizzat[oa]|postsponsorizzato|sponsored|pubblicit[aà])$/i;
+  const pulisci = (t) => t.replace(/[\s ​-‍﻿·•]/g, '');
+
+  // "Partnership pagata con …" / "Paid partnership with …"
+  const PAROLE_PARTNERSHIP = /^(partnershippagata|paidpartnership|collaborazioneretribuita)/i;
+  const isPartnership = (art) => {
+    for (const el of art.querySelectorAll('span, a, div, button')) {
+      if (el.childElementCount > 15) continue;
+      const t = el.textContent;
+      if (t && t.length <= 80 && PAROLE_PARTNERSHIP.test(pulisci(t))) return true;
+    }
+    return false;
+  };
+
+  const isAdv = (art) => {
+    if (art.querySelector('a[href*="l.instagram.com"], a[href*="/ads/"]')) return true;
+    for (const el of art.querySelectorAll('span, a, div')) {
+      if (el.childElementCount > 15) continue;
+      const t = el.textContent;
+      if (t && t.length <= 30 && PAROLE_ADV.test(pulisci(t))) return true;
+    }
+    return false;
+  };
+
+  // Contenitore che scorre (di solito la pagina intera)
+  const contenitoreScroll = (el) => {
+    for (let e = el.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      const oy = getComputedStyle(e).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && e.scrollHeight > e.clientHeight) return e;
+    }
+    return document.scrollingElement || document.documentElement;
+  };
+
+  // Primo elemento che viene dopo "el" nella pagina (fuori da el)
+  const elementoDopo = (el) => {
+    let e = el;
+    while (e && !e.nextElementSibling) e = e.parentElement;
+    return e ? e.nextElementSibling : null;
+  };
+
+  // Nasconde un post senza far saltare quello che stai leggendo
+  const nascondiNelFeed = (el, motivo) => {
+    if (el.dataset.noFeed) return;
+    const r = el.getBoundingClientRect();
+    const sc = contenitoreScroll(el);
+    const cimaSchermo = sc === document.scrollingElement ? 0 : sc.getBoundingClientRect().top;
+    const rif = r.top < cimaSchermo ? elementoDopo(el) : null;
+    const prima = rif ? rif.getBoundingClientRect().top : 0;
+
+    el.dataset.noFeed = motivo;
+    el.style.setProperty('display', 'none', 'important');
+
+    // Il post stava sopra lo schermo: riporta il contenuto dov'era
+    if (rif) {
+      const dopo = rif.getBoundingClientRect().top;
+      if (dopo !== prima) sc.scrollTop += dopo - prima;
+    }
+  };
+
+  const valutaArticolo = (art) => {
+    if (art.dataset.noFeed) return;
+    if (art.querySelector('a[href*="/reel/"]')) nascondiNelFeed(art, 'reel');
+    else if (isAdv(art)) nascondiNelFeed(art, 'adv');
+    else if (isPartnership(art)) nascondiNelFeed(art, 'partnership');
+  };
+
+  // Riserva: blocchi di reel suggeriti fuori dai post
+  const valutaReelSciolti = (radice) => {
+    radice.querySelectorAll('a[href*="/reel/"]').forEach((a) => {
+      if (a.closest('article') || a.closest('[data-no-feed]')) return;
       let el = a;
       for (let i = 0; i < 20 && el.parentElement && el.parentElement !== document.body; i++) {
         const padre = el.parentElement;
+        if (padre.querySelector('article')) break; // mai nascondere il feed intero
         if (padre.children.length >= 3 && el.getBoundingClientRect().height > 200) {
-          el.style.setProperty('display', 'none', 'important');
+          nascondiNelFeed(el, 'reel');
           return;
         }
         el = padre;
       }
     });
+  };
+
+  // Controlla solo le parti della pagina appena cambiate
+  const controllaFeed = (nodi) => {
+    if (location.pathname !== '/') return;
+    const articoli = new Set();
+    for (let n of nodi) {
+      if (n && n.nodeType !== 1) n = n.parentElement;
+      if (!n || !n.isConnected) continue;
+      const a = n.closest('article');
+      if (a) articoli.add(a);
+      else {
+        n.querySelectorAll('article').forEach((x) => articoli.add(x));
+        valutaReelSciolti(n);
+      }
+    }
+    articoli.forEach(valutaArticolo);
   };
 
   // ================= BLOCCO DELLO SCORRIMENTO =================
@@ -183,16 +267,6 @@
     try { localStorage.setItem(CHIAVE_TEMPO, JSON.stringify({ data: oggi(), secondi: s })); } catch (e) {}
   };
 
-  // Pausa attivabile/disattivabile dall'app (scuoti il telefono → Impostazioni)
-  const CHIAVE_PAUSA = 'calma-pausa';
-  const pausaAttiva = () => {
-    if (PAUSA_SECONDI <= 0) return false;
-    try { return localStorage.getItem(CHIAVE_PAUSA) !== 'no'; } catch (e) { return true; }
-  };
-  const impostaPausa = (si) => {
-    try { localStorage.setItem(CHIAVE_PAUSA, si ? 'si' : 'no'); } catch (e) {}
-  };
-
   // Chat e reel ricevuti in chat: liberi, non contano nel tempo
   const zonaLibera = (p) => isChat(p) || (isReel(p) && reelConsentito !== null);
 
@@ -207,7 +281,7 @@
   overlay.id = 'noreels-overlay';
   overlay.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 
-  let modalita = null; // null | 'pausa' | 'limite' | 'impostazioni'
+  let modalita = null; // null | 'pausa' | 'limite'
   let pausaFatta = false;
   let finePausa = 0;
   let pulsanteEntra = null;
@@ -234,54 +308,23 @@
     modalita = nuova;
     overlay.replaceChildren();
 
-    if (nuova === 'impostazioni') {
-      pulsanteEntra = null;
-      const btnPausa = crea('button', '');
-      const scrivi = () => {
-        btnPausa.textContent = pausaAttiva() ? 'Pausa all’ingresso: SÌ' : 'Pausa all’ingresso: NO';
-      };
-      btnPausa.addEventListener('click', () => { impostaPausa(!pausaAttiva()); scrivi(); });
-      scrivi();
-      const btnChiudi = crea('button', 'Chiudi', 'secondario');
-      btnChiudi.addEventListener('click', () => { pausaFatta = true; nascondi(); });
-      overlay.append(
-        crea('h1', 'Impostazioni'),
-        crea('p', `Con la pausa attiva, prima di uscire dalle chat aspetti ${PAUSA_SECONDI} secondi.`),
-        btnPausa,
-        btnChiudi
-      );
-      overlay.classList.add('attivo');
-      return;
-    }
-
     const btnMessaggi = crea('button', 'Vai ai messaggi', nuova === 'pausa' ? 'secondario' : '');
     btnMessaggi.addEventListener('click', vaiAiMessaggi);
 
     if (nuova === 'pausa') {
       finePausa = Date.now() + PAUSA_SECONDI * 1000;
       const restanti = Math.max(0, LIMITE_MINUTI - Math.floor(leggiSecondi() / 60));
-      const sottotitolo = LIMITE_MINUTI > 0
-        ? `Oggi ti restano ${restanti} minuti di Instagram.`
-        : 'Prenditi un momento prima di entrare.';
       pulsanteEntra = crea('button', '');
       pulsanteEntra.addEventListener('click', () => {
         if (Date.now() < finePausa) return;
         pausaFatta = true;
         nascondi();
       });
-      const btnDisattiva = crea('button', 'Disattiva la pausa', 'link');
-      btnDisattiva.addEventListener('click', () => {
-        impostaPausa(false);
-        pausaFatta = true;
-        nascondi();
-      });
       overlay.append(
         crea('h1', 'Cosa sei venuto a fare?'),
-        crea('p', sottotitolo),
+        crea('p', `Oggi ti restano ${restanti} minuti di Instagram.`),
         pulsanteEntra,
-        btnMessaggi,
-        btnDisattiva,
-        crea('small', 'Scuoti il telefono per aprire le impostazioni.')
+        btnMessaggi
       );
       aggiornaConteggio();
     } else {
@@ -296,18 +339,11 @@
 
   const aggiornaOverlay = () => {
     if (!overlay.isConnected) document.documentElement.appendChild(overlay);
-    if (modalita === 'impostazioni') return;
     const p = location.pathname;
     if (zonaLibera(p)) { if (modalita) nascondi(); return; }
-    if (LIMITE_MINUTI > 0 && leggiSecondi() >= LIMITE_MINUTI * 60) { mostra('limite'); return; }
-    if (!pausaFatta && pausaAttiva()) { mostra('pausa'); return; }
+    if (leggiSecondi() >= LIMITE_MINUTI * 60) { mostra('limite'); return; }
+    if (!pausaFatta) { mostra('pausa'); return; }
     if (modalita) nascondi();
-  };
-
-  // Chiamata dall'app quando scuoti il telefono
-  window.__calmaImpostazioni = () => {
-    if (!overlay.isConnected) document.documentElement.appendChild(overlay);
-    mostra('impostazioni');
   };
 
   // Conta i secondi solo fuori dalle chat, con Instagram visibile
@@ -398,18 +434,24 @@
     controlla();
     aggiornaOverlay();
     togliBanner();
-    nascondiReelNelFeed();
   };
 
   new MutationObserver((mutazioni) => {
+    const cambiati = new Set();
     for (const m of mutazioni) {
+      cambiati.add(m.target);
       for (const n of m.addedNodes) {
         if (n.nodeName === 'META' && n.getAttribute('name') === 'apple-itunes-app') n.remove();
+        else cambiati.add(n);
       }
     }
+    // Subito, prima che la pagina venga disegnata: così il feed non salta
+    controllaFeed(cambiati);
     if (Date.now() - ultimoGiro > 250) giro();
-  }).observe(document.documentElement, { childList: true, subtree: true });
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
   setInterval(giro, 300);
+  // Controllo completo del feed ogni tanto, per sicurezza
+  setInterval(() => { if (document.body) controllaFeed([document.body]); }, 2000);
   giro();
 })();
