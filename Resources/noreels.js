@@ -11,8 +11,8 @@
   'use strict';
 
   // ================= IMPOSTAZIONI =================
-  const LIMITE_MINUTI = 20;          // minuti al giorno (le chat non contano)
-  const PAUSA_SECONDI = 10;          // attesa prima di entrare
+  const LIMITE_MINUTI = 0;           // minuti al giorno (le chat non contano); 0 = nessun limite
+  const PAUSA_SECONDI = 10;          // attesa prima di entrare; 0 = nessuna pausa
   const MINUTI_PER_NUOVA_PAUSA = 5;  // se torni dopo 5+ minuti, nuova pausa
   const APRI_MESSAGGI = true;        // all'apertura vai alle chat invece che al feed
 
@@ -73,6 +73,8 @@
     }
     #noreels-overlay button.secondario { background: #262626; color: #fff; }
     #noreels-overlay button:disabled { opacity: .35; }
+    #noreels-overlay button.link { background: transparent; color: #fff; opacity: .6; font-weight: 400; padding: 8px; }
+    #noreels-overlay small { opacity: .45; font-size: 13px; line-height: 1.4; }
   `;
   document.documentElement.appendChild(style);
 
@@ -267,6 +269,16 @@
     try { localStorage.setItem(CHIAVE_TEMPO, JSON.stringify({ data: oggi(), secondi: s })); } catch (e) {}
   };
 
+  // Pausa attivabile/disattivabile dall'app (scuoti il telefono → Impostazioni)
+  const CHIAVE_PAUSA = 'calma-pausa';
+  const pausaAttiva = () => {
+    if (PAUSA_SECONDI <= 0) return false;
+    try { return localStorage.getItem(CHIAVE_PAUSA) !== 'no'; } catch (e) { return true; }
+  };
+  const impostaPausa = (si) => {
+    try { localStorage.setItem(CHIAVE_PAUSA, si ? 'si' : 'no'); } catch (e) {}
+  };
+
   // Chat e reel ricevuti in chat: liberi, non contano nel tempo
   const zonaLibera = (p) => isChat(p) || (isReel(p) && reelConsentito !== null);
 
@@ -281,7 +293,7 @@
   overlay.id = 'noreels-overlay';
   overlay.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 
-  let modalita = null; // null | 'pausa' | 'limite'
+  let modalita = null; // null | 'pausa' | 'limite' | 'impostazioni'
   let pausaFatta = false;
   let finePausa = 0;
   let pulsanteEntra = null;
@@ -308,23 +320,54 @@
     modalita = nuova;
     overlay.replaceChildren();
 
+    if (nuova === 'impostazioni') {
+      pulsanteEntra = null;
+      const btnPausa = crea('button', '');
+      const scrivi = () => {
+        btnPausa.textContent = pausaAttiva() ? 'Pausa all’ingresso: SÌ' : 'Pausa all’ingresso: NO';
+      };
+      btnPausa.addEventListener('click', () => { impostaPausa(!pausaAttiva()); scrivi(); });
+      scrivi();
+      const btnChiudi = crea('button', 'Chiudi', 'secondario');
+      btnChiudi.addEventListener('click', () => { pausaFatta = true; nascondi(); });
+      overlay.append(
+        crea('h1', 'Impostazioni'),
+        crea('p', `Con la pausa attiva, prima di uscire dalle chat aspetti ${PAUSA_SECONDI} secondi.`),
+        btnPausa,
+        btnChiudi
+      );
+      overlay.classList.add('attivo');
+      return;
+    }
+
     const btnMessaggi = crea('button', 'Vai ai messaggi', nuova === 'pausa' ? 'secondario' : '');
     btnMessaggi.addEventListener('click', vaiAiMessaggi);
 
     if (nuova === 'pausa') {
       finePausa = Date.now() + PAUSA_SECONDI * 1000;
       const restanti = Math.max(0, LIMITE_MINUTI - Math.floor(leggiSecondi() / 60));
+      const sottotitolo = LIMITE_MINUTI > 0
+        ? `Oggi ti restano ${restanti} minuti di Instagram.`
+        : 'Prenditi un momento prima di entrare.';
       pulsanteEntra = crea('button', '');
       pulsanteEntra.addEventListener('click', () => {
         if (Date.now() < finePausa) return;
         pausaFatta = true;
         nascondi();
       });
+      const btnDisattiva = crea('button', 'Disattiva la pausa', 'link');
+      btnDisattiva.addEventListener('click', () => {
+        impostaPausa(false);
+        pausaFatta = true;
+        nascondi();
+      });
       overlay.append(
         crea('h1', 'Cosa sei venuto a fare?'),
-        crea('p', `Oggi ti restano ${restanti} minuti di Instagram.`),
+        crea('p', sottotitolo),
         pulsanteEntra,
-        btnMessaggi
+        btnMessaggi,
+        btnDisattiva,
+        crea('small', 'Scuoti il telefono per aprire le impostazioni.')
       );
       aggiornaConteggio();
     } else {
@@ -339,11 +382,18 @@
 
   const aggiornaOverlay = () => {
     if (!overlay.isConnected) document.documentElement.appendChild(overlay);
+    if (modalita === 'impostazioni') return;
     const p = location.pathname;
     if (zonaLibera(p)) { if (modalita) nascondi(); return; }
-    if (leggiSecondi() >= LIMITE_MINUTI * 60) { mostra('limite'); return; }
-    if (!pausaFatta) { mostra('pausa'); return; }
+    if (LIMITE_MINUTI > 0 && leggiSecondi() >= LIMITE_MINUTI * 60) { mostra('limite'); return; }
+    if (!pausaFatta && pausaAttiva()) { mostra('pausa'); return; }
     if (modalita) nascondi();
+  };
+
+  // Chiamata dall'app quando scuoti il telefono
+  window.__calmaImpostazioni = () => {
+    if (!overlay.isConnected) document.documentElement.appendChild(overlay);
+    mostra('impostazioni');
   };
 
   // Conta i secondi solo fuori dalle chat, con Instagram visibile

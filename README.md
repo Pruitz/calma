@@ -72,8 +72,8 @@ Poi fai il login a Instagram dentro l'app (resta salvato). Dopo, **elimina l'app
 - Si apre sempre sui **messaggi**.
 - **Niente reels**: tab nascosta, reel tolti dal feed, e dei reel che ti mandano vedi solo quello, senza poter scorrere ad altri.
 - **Cerca** mostra solo i profili.
-- **Pausa** di 10 secondi prima di uscire dalle chat ("Cosa sei venuto a fare?").
-- **Limite** di 20 minuti al giorno fuori dalle chat. Finito il tempo restano solo i messaggi.
+- **Pausa** di 10 secondi prima di uscire dalle chat ("Cosa sei venuto a fare?"). Si attiva o disattiva dall'app: **scuoti il telefono** → Impostazioni, oppure "Disattiva la pausa" nella schermata della pausa.
+- **Limite** giornaliero fuori dalle chat (ora disattivato: `LIMITE_MINUTI = 0`). Finito il tempo restano solo i messaggi.
 - Se esci dall'app per più di 5 minuti, al ritorno si riparte dai messaggi, con nuova pausa.
 - Swipe dal bordo sinistro = indietro. Tira giù in cima alla pagina = ricarica.
 - I link esterni si aprono in Safari.
